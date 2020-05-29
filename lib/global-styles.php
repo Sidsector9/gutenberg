@@ -315,6 +315,61 @@ function gutenberg_experimental_global_styles_get_block_data() {
 }
 
 /**
+ * This function allows to easily access a part from a php array.
+ * It is equivalent to want lodash get provides for JavaScript and is useful to have something similar
+ * in php so functions that do the same thing on the client and sever can have identical code.
+ *
+ * @param array $array  An array from where we want to retrieve some information from.
+ * @param array $path   An array containing the path we want to retrieve.
+ *
+ * @return array Containing a set of css rules.
+ */
+function gutenberg_experimental_get( $array, $path ) {
+	$path_length = count( $path );
+	for ( $i = 0; $i < $path_length; ++$i ) {
+		if ( empty( $array[ $path[ $i ] ] ) ) {
+			return null;
+		}
+		$array = $array[ $path[ $i ] ];
+	}
+	return $array;
+}
+
+
+
+/**
+ * Given an array contain the styles shape returns the css for this styles.
+ * A similar function exists on the client at /packages/block-editor/src/hooks/style.js.
+ *
+ * It can also create and return a new draft CPT.
+ *
+ * @param array $styles  Array containing the styles shape from global styles.
+ *
+ * @return array Containing a set of css rules.
+ */
+function gutenberg_experimental_get_styles( $styles ) {
+	$mappings = array(
+		'line-height'       => array( 'typography', 'lineHeight' ),
+		'font-size'         => array( 'typography', 'fontSize' ),
+		'background'        => array( 'color', 'gradient' ),
+		'background-color'  => array( 'color', 'background' ),
+		'color'             => array( 'color', 'text' ),
+		'--wp--color--link' => array( 'color', 'link' ),
+	);
+
+	$result = array();
+
+	foreach ( $mappings as $key => $path ) {
+		$value = gutenberg_experimental_get( $styles, $path );
+		if ( null !== $value ) {
+			$result[ $key ] = $value;
+		}
+	}
+	return $result;
+
+}
+
+/**
  * Takes a tree adhering to the theme.json schema and generates
  * the corresponding stylesheet.
  *
@@ -352,7 +407,10 @@ function gutenberg_experimental_global_styles_resolver( $tree ) {
 		$stylesheet .= gutenberg_experimental_global_styles_resolver_styles(
 			$block_data[ $block_name ]['selector'],
 			$block_data[ $block_name ]['supports'],
-			array_merge( $tree[ $block_name ]['styles'], $css_variables )
+			array_merge(
+				gutenberg_experimental_get_styles( $tree[ $block_name ]['styles'] ),
+				$css_variables
+			)
 		);
 	}
 	return $stylesheet;
@@ -470,10 +528,6 @@ function gutenberg_experimental_global_styles_get_stylesheet() {
  * and enqueues the resulting stylesheet.
  */
 function gutenberg_experimental_global_styles_enqueue_assets() {
-	if ( ! gutenberg_experimental_global_styles_has_theme_json_support() ) {
-		return;
-	}
-
 	$stylesheet = gutenberg_experimental_global_styles_get_stylesheet();
 
 	wp_register_style( 'global-styles', false, array(), true, true );
@@ -488,18 +542,18 @@ function gutenberg_experimental_global_styles_enqueue_assets() {
  * @return array New block editor settings
  */
 function gutenberg_experimental_global_styles_settings( $settings ) {
-	if ( ! gutenberg_experimental_global_styles_has_theme_json_support() ) {
-		return $settings;
-	}
-
 	$settings['__experimentalGlobalStylesUserEntityId'] = gutenberg_experimental_global_styles_get_user_cpt_id();
 
-	$global_styles = gutenberg_experimental_global_styles_merge_trees(
+	$global_styles_base = gutenberg_experimental_global_styles_merge_trees(
 		gutenberg_experimental_global_styles_get_core(),
 		gutenberg_experimental_global_styles_get_theme()
 	);
 
-	$settings['__experimentalGlobalStylesBase'] = $global_styles;
+	$settings['__experimentalGlobalStylesBase'] = $global_styles_base;
+	$settings['__experimentalGlobalStyles']     = gutenberg_experimental_global_styles_merge_trees(
+		$global_styles_base,
+		gutenberg_experimental_global_styles_get_user()
+	);
 
 	// Add the styles for the editor via the settings
 	// so they get processed as if they were added via add_editor_styles:
