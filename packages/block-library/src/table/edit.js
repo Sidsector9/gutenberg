@@ -102,6 +102,10 @@ function TableEdit( {
 	const [ initialRowCount, setInitialRowCount ] = useState( 2 );
 	const [ initialColumnCount, setInitialColumnCount ] = useState( 2 );
 	const [ selectedCell, setSelectedCell ] = useState();
+	const [ dragging, setDragging ] = useState( false );
+	const [ startCell, setStartCell ] = useState( null );
+	const [ endCell, setEndCell ] = useState( null );
+	const [ mergedCells, setMergedCells ] = useState([]);
 
 	const colorProps = useColorProps( attributes );
 	const borderProps = useBorderProps( attributes );
@@ -340,6 +344,104 @@ function TableEdit( {
 		);
 	}
 
+	function handleMouseDown( row, col ) {
+		setDragging( true );
+		setStartCell( { row, col });
+		setEndCell( { row, col } );
+	};
+
+	function handleMouseOver( row, col ) {
+		if ( dragging ) {
+			setEndCell( { row, col } );
+		}
+	};
+
+	function handleMouseUp() {
+		setDragging( false );
+	};
+
+	function getCellMergeInfo( row, col ) {
+		for ( const merge of mergedCells) {
+			if ( row === merge.row && col === merge.col ) {
+				return merge;
+			}
+		}
+
+		return null;
+	};
+
+	function isInMergedCell( row, col ) {
+		for ( const merge of mergedCells ) {
+			if (
+				row >= merge.row &&
+				row < merge.row + merge.rowSpan &&
+				col >= merge.col &&
+				col < merge.col + merge.colSpan
+			) {
+				return true;
+			}
+		}
+		return false;
+	};
+
+	function isInSelection( row, col ) {
+		if ( ! startCell || ! endCell ) {
+			return false;
+		}
+
+		const [ startRow, startCol ] = [ startCell.row, startCell.col ];
+		const [ endRow, endCol ] = [ endCell.row, endCell.col ];
+
+		return (
+			row >= Math.min(startRow, endRow) &&
+			row <= Math.max(startRow, endRow) &&
+			col >= Math.min(startCol, endCol) &&
+			col <= Math.max(startCol, endCol)
+		);
+	};
+
+	function onMergeCells() {
+		if ( startCell && endCell ) {
+			const newMergedCell = {
+				row: Math.min(startCell.row, endCell.row),
+				col: Math.min(startCell.col, endCell.col),
+				rowSpan: Math.abs(startCell.row - endCell.row) + 1,
+				colSpan: Math.abs(startCell.col - endCell.col) + 1,
+			};
+			setMergedCells([...mergedCells, newMergedCell]);
+			setStartCell(null);
+			setEndCell(null);
+
+			const topRow = Math.min(startCell.row, endCell.row);
+			const leftCol = Math.min(startCell.col, endCell.col);
+			const rowSpan = Math.abs(startCell.row - endCell.row) + 1;
+			const colSpan = Math.abs(startCell.col - endCell.col) + 1;
+
+			const newBody = [...attributes.body];
+
+			// Set rowspan and colspan for the top-left cell.
+			if (newBody[topRow - 1] && newBody[topRow - 1].cells[leftCol - 1]) {
+				newBody[topRow - 1].cells[leftCol - 1].rowspan = rowSpan;
+				newBody[topRow - 1].cells[leftCol - 1].colspan = colSpan;
+			}
+
+			for ( let i = topRow - 1; i < topRow + rowSpan - 1; i++ ) {
+				for ( let j = leftCol - 1; j < leftCol + colSpan - 1; j++ ) {
+					if (i !== topRow - 1 || j !== leftCol - 1) {
+						newBody[i].cells[j].content = null;
+					}
+				}
+			}
+
+			setAttributes({ body: newBody });
+		}
+	};
+
+	const hasMultipleCellsSelected = () => {
+		if (!startCell || !endCell) return false;
+		return startCell.row !== endCell.row || startCell.col !== endCell.col;
+	};
+
 	useEffect( () => {
 		if ( ! isSelected ) {
 			setSelectedCell();
@@ -396,6 +498,11 @@ function TableEdit( {
 			isDisabled: ! selectedCell,
 			onClick: onDeleteColumn,
 		},
+		{
+			title: __( 'Merge cells' ),
+			isDisabled: ! hasMultipleCellsSelected(),
+			onClick: onMergeCells,
+		},
 	];
 
 	const renderedSections = sections.map( ( name ) => (
@@ -413,33 +520,57 @@ function TableEdit( {
 								rowspan,
 							},
 							columnIndex
-						) => (
-							<RichText
-								tagName={ CellTag }
-								key={ columnIndex }
-								className={ classnames(
-									{
-										[ `has-text-align-${ align }` ]: align,
-									},
-									'wp-block-table__cell-content'
-								) }
-								scope={ CellTag === 'th' ? scope : undefined }
-								colSpan={ colspan }
-								rowSpan={ rowspan }
-								value={ content }
-								onChange={ onChange }
-								onFocus={ () => {
-									setSelectedCell( {
-										sectionName: name,
-										rowIndex,
-										columnIndex,
-										type: 'cell',
-									} );
-								} }
-								aria-label={ cellAriaLabel[ name ] }
-								placeholder={ placeholder[ name ] }
-							/>
-						)
+						) => {
+							const rowActual = rowIndex + 1;
+							const colActual = columnIndex + 1;
+
+							if (isInMergedCell(rowActual, colActual) && !getCellMergeInfo(rowActual, colActual)) {
+								return null;
+							}
+
+							if ( null === content ) {
+								return null;
+							}
+
+							return (
+								<RichText
+									role="button"
+									tabIndex={ 0 }
+									tagName={ CellTag }
+									key={ columnIndex }
+									className={ classnames(
+										{
+											[ `has-text-align-${ align }` ]: align,
+										},
+										'wp-block-table__cell-content'
+									) }
+									scope={ CellTag === 'th' ? scope : undefined }
+									colSpan={ colspan }
+									rowSpan={ rowspan }
+									value={ content }
+									onChange={ onChange }
+									onFocus={ () => {
+										setSelectedCell( {
+											sectionName: name,
+											rowIndex,
+											columnIndex,
+											type: 'cell',
+										} );
+									} }
+									aria-label={ cellAriaLabel[ name ] }
+									placeholder={ placeholder[ name ] }
+									onMouseDown={() => handleMouseDown(rowActual, colActual)}
+									onMouseOver={() => handleMouseOver(rowActual, colActual)}
+									style={{
+										padding: '10px',
+										border: '1px solid black',
+										backgroundColor: isInSelection(rowActual, colActual) && 'body' === name
+										  ? 'lightblue'
+										  : 'white',
+									}}
+								/>
+							)
+						}
 					) }
 				</tr>
 			) ) }
@@ -502,7 +633,7 @@ function TableEdit( {
 				</PanelBody>
 			</InspectorControls>
 			{ ! isEmpty && (
-				<table
+				<table onMouseUp={handleMouseUp}
 					className={ classnames(
 						colorProps.className,
 						borderProps.className,
@@ -523,6 +654,8 @@ function TableEdit( {
 			) }
 			{ ! isEmpty && (
 				<RichText
+					role="button"
+					tabIndex={ 0 }
 					identifier="caption"
 					tagName="figcaption"
 					className={ __experimentalGetElementClassName( 'caption' ) }

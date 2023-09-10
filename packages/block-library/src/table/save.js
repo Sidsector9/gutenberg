@@ -58,6 +58,10 @@ export default function save( { attributes } ) {
 									[ `has-text-align-${ align }` ]: align,
 								} );
 
+								if ( null === content ) {
+									return null;
+								}
+
 								return (
 									<RichText.Content
 										className={
