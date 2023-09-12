@@ -102,6 +102,11 @@
 							"type": "string",
 							"source": "attribute",
 							"attribute": "rowspan"
+						},
+						"isNull": {
+							"type": "string",
+							"source": "attribute",
+							"attribute": "data-is-null"
 						}
 					}
 				}
@@ -151,6 +156,10 @@
 					}
 				}
 			}
+		},
+		"nullCells": {
+			"type": "array",
+			"default": []
 		}
 	},
 	"supports": {

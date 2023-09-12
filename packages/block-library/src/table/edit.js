@@ -98,7 +98,7 @@ function TableEdit( {
 	insertBlocksAfter,
 	isSelected,
 } ) {
-	const { hasFixedLayout, caption, head, foot } = attributes;
+	const { hasFixedLayout, caption, head, foot, nullCells } = attributes;
 	const [ initialRowCount, setInitialRowCount ] = useState( 2 );
 	const [ initialColumnCount, setInitialColumnCount ] = useState( 2 );
 	const [ selectedCell, setSelectedCell ] = useState();
@@ -106,6 +106,7 @@ function TableEdit( {
 	const [ startCell, setStartCell ] = useState( null );
 	const [ endCell, setEndCell ] = useState( null );
 	const [ mergedCells, setMergedCells ] = useState([]);
+	const [ mergeStatus, setMergeStatus ] = useState( false );
 
 	const colorProps = useColorProps( attributes );
 	const borderProps = useBorderProps( attributes );
@@ -344,13 +345,13 @@ function TableEdit( {
 		);
 	}
 
-	function handleMouseDown( row, col ) {
+	function handleMouseDown( row, col, rowspan, colspan ) {
 		setDragging( true );
 		setStartCell( { row, col });
 		setEndCell( { row, col } );
 	};
 
-	function handleMouseOver( row, col ) {
+	function handleMouseOver( row, col, rowspan, colspan ) {
 		if ( dragging ) {
 			setEndCell( { row, col } );
 		}
@@ -434,6 +435,7 @@ function TableEdit( {
 			}
 
 			setAttributes({ body: newBody });
+			setMergeStatus( true );
 		}
 	};
 
@@ -505,6 +507,36 @@ function TableEdit( {
 		},
 	];
 
+	function gatherNullCells() {
+		if ( ! attributes?.body ) {
+			return;
+		}
+
+		const __nullCells = [];
+
+		attributes.body.map( ( { cells }, rowIndex ) => {
+			cells.map( ( { content, rowspan, colspan }, columnIndex ) => {
+				const rowActual = rowIndex + 1;
+				const colActual = columnIndex + 1;
+
+				if (isInMergedCell(rowActual, colActual) && !getCellMergeInfo(rowActual, colActual)) {
+					__nullCells.push( `${rowActual}-${colActual}` );
+				}
+			} )
+		} );
+
+		const nullCellsState = Array.isArray( nullCells ) ? nullCells : [];
+
+		setAttributes( { nullCells: [ ...nullCellsState, ...__nullCells ] } );
+		setMergeStatus( false );
+	};
+
+	useEffect( () => {
+		if ( mergeStatus ) {
+			gatherNullCells();
+		}
+	}, [ mergeStatus ] );
+
 	const renderedSections = sections.map( ( name ) => (
 		<TSection name={ name } key={ name }>
 			{ attributes[ name ].map( ( { cells }, rowIndex ) => (
@@ -518,6 +550,7 @@ function TableEdit( {
 								align,
 								colspan,
 								rowspan,
+								isNull
 							},
 							columnIndex
 						) => {
@@ -528,7 +561,7 @@ function TableEdit( {
 								return null;
 							}
 
-							if ( null === content ) {
+							if ( 'yes' === isNull ) {
 								return null;
 							}
 
@@ -559,8 +592,8 @@ function TableEdit( {
 									} }
 									aria-label={ cellAriaLabel[ name ] }
 									placeholder={ placeholder[ name ] }
-									onMouseDown={() => handleMouseDown(rowActual, colActual)}
-									onMouseOver={() => handleMouseOver(rowActual, colActual)}
+									onMouseDown={() => handleMouseDown(rowActual, colActual, Number( rowspan ), Number( colspan ))}
+									onMouseOver={() => handleMouseOver(rowActual, colActual, Number( rowspan ), Number( colspan ))}
 									style={{
 										padding: '10px',
 										border: '1px solid black',

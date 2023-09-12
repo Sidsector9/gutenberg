@@ -2,6 +2,7 @@
  * External dependencies
  */
 import classnames from 'classnames';
+import { cloneDeep } from 'lodash';
 
 /**
  * WordPress dependencies
@@ -15,7 +16,7 @@ import {
 } from '@wordpress/block-editor';
 
 export default function save( { attributes } ) {
-	const { hasFixedLayout, head, body, foot, caption } = attributes;
+	const { hasFixedLayout, head, body, foot, caption, nullCells } = attributes;
 	const isEmpty = ! head.length && ! body.length && ! foot.length;
 
 	if ( isEmpty ) {
@@ -52,18 +53,16 @@ export default function save( { attributes } ) {
 									colspan,
 									rowspan,
 								},
-								cellIndex
+								columnIndex
 							) => {
 								const cellClasses = classnames( {
 									[ `has-text-align-${ align }` ]: align,
 								} );
 
-								if ( null === content ) {
-									return null;
-								}
-
+								const isNull =  Array.isArray( nullCells ) && nullCells.includes( `${ rowIndex + 1 }-${ columnIndex + 1 }` );
 								return (
 									<RichText.Content
+										data-is-null={ isNull ? 'yes' : 'no' }
 										className={
 											cellClasses
 												? cellClasses
@@ -72,7 +71,7 @@ export default function save( { attributes } ) {
 										data-align={ align }
 										tagName={ tag }
 										value={ content }
-										key={ cellIndex }
+										key={ columnIndex }
 										scope={
 											tag === 'th' ? scope : undefined
 										}
